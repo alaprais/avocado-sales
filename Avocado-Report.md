@@ -1,0 +1,1088 @@
+Predicting Avocado Sales
+================
+
+# Executive Summary
+
+The main question of interest for this report is: Can we accurately
+predict weekly Hass avocado sales in San Francisco based on historical
+data? Of secondary interest is whether or not Hass avocados experience
+an off-season, and what effect this has on said prediction. We present
+an exploratory analysis of the data that suggests a slight off-season
+for organic Hass avocados as well as the absence of any such off-season
+for conventional avocados. We also present a Bayesian prediction
+strategy through the use of Jeffreys prior and a Poisson model. The
+presented strategy produces estimates with, on average, $20\%$
+deviations from observed values, usually in the form of over-estimation,
+which we deem an encouraging result. Finally, we discuss how this
+prediction strategy can be refined for more nuanced prediction outcomes.
+
+# Introduction
+
+As is discussed in Arpaia, Hass avocados are cultivated nearly
+year-round in California, with most of harvesting occurring between
+February - August, and the Chilean market presumably making up for any
+dearth of avocados during the winter months. However, because of the
+increased costs and risks associated with international shipping,
+California retailers may be specifically interested in buying the
+correct amount of avocados to sell during the winter months (Sept-Jan).
+For this reason, we consider the predictive framework of off-season
+sales considering a subset of the data collected during these winter
+months. However, since this “off-season” is not a true off-season, we
+also consider the predictive framework provided by the full dataset, and
+compare the two approaches.
+
+# Data Characteristics
+
+This data is pulled from the Kaggle “Avocado Price” dataset. This
+observational data, originally sourced from the Hass Avocado Board,
+covers weekly retail Avocado data for United States regions. This
+dataset includes weekly price data, weekly units sold (for organic and
+conventional avocados), and of course dates for all the sales. Since we
+are interested in predicting number of sales, we keep the “Date”,
+“Total.Volume”, “type”, and “region” columns.
+
+The data covers sales from Jan 2015 to March 2018. We also choose to
+focus our attention on the San Francisco region, but this analysis could
+be repeated for a larger regional center. As discussed previously, we
+consider sales occurring between the months of Sept-Jan for the
+“off-season” analysis, and consider all months of the year for the
+“full-season” analysis. For the “in-season” data subsets we simply
+consider all observations that occured in non-“off-season” months. We
+also divide our data along “organic” and “conventional” distinctions,
+and consider the separate predictions for each of these avocado types.
+The “full” and “off-season” sets consist of 169 weeks and 70 weeks of
+sales data respectively for both conventional and organic avocado types.
+
+In our model, we include data only from years 2015-2017, and use 2018
+observations for model validation. However, to provide a fully
+up-to-date summary of the data, we provide exploratory information on
+all available data (years 2015-2018).
+
+From the plots below, we don’t see an obvious indication of “on” or
+“off” seasons, although sales are usually on the lower end in the
+off-seasons, and the highest sales usually occur when the Hass avocado
+is “in-season”. In fact, the highest sale times seem to occur near the
+start of the year, perhaps as the Hass avocado becomes “in-season”
+again. Most interestingly, there is little-to-no indication of a
+long-term upwards or downwards trend in weekly sales for both types of
+Hass avocado, despite the presence of noticeable week-to-week
+volatility.
+
+![](Avocado-Report_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->![](Avocado-Report_files/figure-gfm/unnamed-chunk-6-2.png)<!-- -->
+
+We list some useful summary statistics for each data subset:
+
+|                                    |  Mean |   SD |  Min |    Q1 |    Q2 |    Q3 |   Max |
+|:-----------------------------------|------:|-----:|-----:|------:|------:|------:|------:|
+| **In-Season Conventional (100k)**  |  8.09 | 2.00 | 5.62 |  6.74 |  7.66 |  8.57 | 17.06 |
+| **Off-Season Conventional (100k)** |  7.43 | 1.70 | 4.12 |  6.44 |  7.11 |  8.47 | 13.02 |
+| **In-Season Organic (1k)**         | 24.52 | 7.82 | 8.31 | 20.55 | 24.04 | 27.17 | 57.80 |
+| **Off-Season Organic (1k)**        | 19.40 | 5.62 | 9.05 | 15.56 | 18.70 | 21.15 | 41.48 |
+
+Summary Stats
+
+We see immediately that organic Hass avocados have a much higher
+variability than do conventional Hass avocados. We also see a strong
+suggestion of similarity between off-season and in-season conventional
+avocados, with very similar quartiles, means, and variability. This
+similarity can perhaps more easily be seen in the below empirical
+distributions:
+
+![](Avocado-Report_files/figure-gfm/unnamed-chunk-8-1.png)<!-- --> This
+similarity is most evident in the conventional avocado sales
+distributions, where the bulk of the distribution is quite similar. In
+this case it seems that conventional Hass avocados do not have a
+strongly noticeable off-season. On the other hand, organic Hass avocados
+do seem to have a more distinct off-season, although the difference is
+slight, and is somewhat marred by the small outliers of the in-season
+distribution. This result nevertheless aligns with the argument that
+organic avocados are not as resilient to the conditions imposed by
+long-distance travel, which leads to a decrease in supply during the
+California “off-season”, when avocados are more likely to be imported.
+Note also that the highest sale volumes occur during in-season for both
+organic and conventional subtypes.
+
+This exploratory analysis suggests that conventional avocado sales
+predictions given by models based on off-season data likely give, at
+best, marginal predictive improvements for off-season weeks when
+compared to prediction based on the full years (off + in season) data.
+On the other hand, off-season models may be more accurate than
+full-season models when predicting off-season organic avocado sales.
+
+# Model Selection and Interpretation
+
+In this section, we present models for off-season organic prediction,
+full-season organic prediction, as well as full-season conventional
+prediction. (We relegate discussion of an off-season conventional model
+to a future analysis since it likely provides similar results at the
+cost of a smaller sample size as well as a more complex justification.)
+These separate models all have the same form, differing only by the
+dataset used. Again, for our model we only consider 2015-2017 data, and
+save 2018 data as a validation set. Sample sizes are as follows:
+
+|                              | Model Data | Validation Data |
+|:-----------------------------|-----------:|----------------:|
+| **Full-Season Organic**      |        157 |              12 |
+| **Off-Season Organic**       |         66 |               4 |
+| **Full-Season Conventional** |        157 |              12 |
+
+Sample Sizes
+
+Astute observers will notice that the “test” sets are quite small,
+accounting for around $5\%-7\%$ of the total sample. Ideally, we would
+desire a larger test set, but doing so would involve siphoning from the
+model data, which already finds itself with a small sample size.
+Additionally, there is a certain rhetorical advantage to model
+validation with “the most recent year’s data”.
+
+Since we are modeling counts, a natural choice for a model would be the
+Poisson model, where we make the judgement that our data meets the
+“necessary and sufficient” condition for Poisson characterization as
+discussed in Singpurwalla (2006). That is, given the sum $S_n$ of
+avocado counts for $n$ observations, we judge that
+$p(y_1,...,y_n\vert S_n)$ can be expressed as randomly distributing the
+avocado sales among the n observations. Since in our exploratory
+analysis we find no clear and obvious trend associated with conventional
+Hass avocado sales, and only a slight off-season effect for organic Hass
+avocados, we feel comfortable in assuming this symmetry over this
+time-span. However, because the organic avocados off-season behavior
+challenges this judgment, we also independently construct a model that
+considers organic off-season Hass avocado sale volumes - from which we
+later see some marginal improvement over the full data model.
+
+Thus our general sampling model is
+$p(y\vert\theta) = \frac{\theta^{n\bar{y}}e^{-n\theta}}{\prod^n y_i!}$
+for $y_i\in\mathbb{N} \cup \{0\}$.
+
+For our prior we choose the uninformative Jeffreys prior, primarily
+because we have little knowledge about avocado sales, and partly to
+facilitate “selling” the model to non-statisticians by saying that the
+data will have as much influence as possible on the resulting model
+(although any other reasonable prior would probably give satisfactory
+results). So we have $p(\theta)\propto \theta^{-\frac{1}{2}}$, where
+$\theta>0$. Note that this prior is improper. It follows that our
+posterior is given by
+$\theta\vert y \sim \text{Gamma}(n\bar{y} +\frac{1}{2},n)$.
+
+It can be further shown that our posterior predictive distribution has
+the form: $$
+p(\tilde{y}\vert y) = \frac{n_y^{\frac{1}{2}+\sum y_i}}{\prod\tilde{y}_j! \cdot\Gamma(\frac{1}{2}+\sum y_i)}\frac{\Gamma(\frac{1}{2}+\sum{\tilde{y_j}}+\sum{y_i})}{(n_{\tilde{y}}+n_y)^{\frac{1}{2}+\sum{\tilde{y_j}}+\sum{y_i}}}
+$$ where $\tilde{y} >0$.
+
+Now before examining predictive power, we examine the model’s
+faithfulness to the data. Recall, we have three models for three
+situations: off-season organic, full-season organic, and full-season
+conventional. First, in a Poisson model, we have that mean = variance.
+Thus we can immediately verify if our sample data follows this
+theoretical stipulation.
+
+|                              | Sample Mean | Sample Variance | Sample Size |
+|:-----------------------------|------------:|----------------:|------------:|
+| **Off-Season Organic**       |    18.97756 |       27.229461 |          66 |
+| **Full-Season Organic**      |    22.03857 |       54.419504 |         157 |
+| **Full-Season Conventional** |     7.60426 |        2.795757 |         157 |
+
+Summary of Model Data
+
+Unfortunately we see that all datasets violate this assumption to
+varying degrees, although the Off-Season Organic dataset does not
+embarrass itself as much as the other two datasets. This measure
+suggests that the Poisson model imposes a property not indicated by the
+data. However, to paraphrase Gelman, we do not reject the model out of
+hand for this infidelity, but rather note this important shortcoming and
+continue.
+
+![](Avocado-Report_files/figure-gfm/unnamed-chunk-17-1.png)<!-- -->
+Looking at the histograms we notice a distinct right-skew that is
+present in all three data sets, as well as a clear indication of many
+large outliers. To examine outliers we define:
+
+$$
+t_{\text{outlier}}(y) = \frac{\# y_i :y_i > \text{Q3} + 1.5(\text{Q3}-\text{Q1})}{n_y}
+$$ which is the standard ‘boxplot’ method for determining outliers. We
+then plot our replicated samples against the observed discrepancy
+measure:
+
+![](Avocado-Report_files/figure-gfm/unnamed-chunk-20-1.png)<!-- -->
+Where the red line is the observed percentage of outliers in the sample
+data. It is clear that our model does not often replicate the number of
+outliers seen in the data. However, this is not so bad a problem since
+failing to predict an outlier in terms of avocado unit sales simply
+means that demand would be higher than supply. So although “money is
+being left on the table”, under-estimating demand is not a catastrophic
+business result. And if we are interested in overall predictive
+accuracy, we do not need to concern ourselves with (at most) the
+uncharacteristic 5% of the data. Thus we can forgive this shortcoming of
+the model.
+
+We now examine the skew of our model:
+
+![](Avocado-Report_files/figure-gfm/unnamed-chunk-22-1.png)<!-- --> Here
+the red line denotes the observed skew in the sample data. We see that
+our model performs abysmally at replicating the skew of the data.
+Specifically, our model will more often symmetrically predict values
+around its center, thus predicting higher than central values with a
+greater frequency than is suggested by the shape of the data. How
+alarming this result is depends entirely on the financial specifics of
+the situation, since slight overestimation allows for large profits
+during the higher demand periods in exchange for some dampening of
+profits during the lower demand periods. We imagine that in many cases,
+avocado sellers would prefer to slightly overestimate sales. For that
+scenario our model’s failure to replicate the skew in the data is
+actually a benefit. However, in use-cases where overestimation is very
+costly, this model may be an inappropriate choice.
+
+# Prediction
+
+We can view the values taken by the posterior predictive distribution as
+our model’s belief about avocado sales. Thus we can use the model,
+together with our own understanding of the model’s shortcomings as well
+as our (ever-evolving) belief about avocado sales to devise a prediction
+strategy. In a sense, we are informed by the model rather than governed
+by it. For example, credible intervals give a sense of a possible spread
+of values from which decisions can be made. Here we give 90% HPD
+intervals, but one-sided intervals may be of use as well depending on
+specific goals.
+
+|                                     | Lower Bound | Upper Bound |
+|:------------------------------------|------------:|------------:|
+| **Off-Season Organic (1k)**         |       14.88 |       30.69 |
+| **Full-Season Organic (1k)**        |       17.66 |       34.47 |
+| **Full-Season Conventional (100k)** |        3.99 |       13.83 |
+
+90% HPD Credible Interval for Future Avocado Sales
+
+These intervals condense the usefulness of the posterior predictive
+distribution, and enables the reader to use their own belief for
+prediction. For example, choosing a value nearer to the upper bound of
+this interval reflects an ambitious/bullish belief about future avocado
+sales and choosing a value nearer to the lower bound of this interval
+reflects a conservative/bearish belief about future avocado sales.
+
+Now we validate the model through its accuracy at predicting 2018 data.
+In a practical situation we would do this point-by-point, updating our
+model along the way. But for reasons of time-constraints, we restrict
+ourselves to only using the “initial” posterior predictive
+distributions. (Maybe for my presentation!) First we look at where the
+points lie on our initial posterior predictive distributions:
+
+![](Avocado-Report_files/figure-gfm/unnamed-chunk-25-1.png)<!-- -->
+Where the red points are the observed 2018 results. We see promising
+results from the plots for our models predictive power, although it
+definitely seems that 2018 is a better than average year for avocado
+sales. However we need to quantify the predictive accuracy in order to
+thoroughly asses our model, for which we need a single number to compare
+to observed outcomes.
+
+As discussed previously, we imagine that avocado sellers would prefer to
+slightly over-estimate sales. Thus we devise a somewhat crude strategy
+of using the 75th percentile as a more aggressive “bullish” estimate for
+our prediction point. Using this point as our weekly prediction, we can
+quantify the prediction error of our model.
+
+|                                     | Predicted Val |   MSE | root MSE |  MAE | MAPE (%) | Overestimate (%) |
+|:------------------------------------|--------------:|------:|---------:|-----:|---------:|-----------------:|
+| **Full-Season Organic (1k)**        |         29.44 | 44.29 |     6.66 | 6.04 |    23.84 |            75.00 |
+| **Full-Season Conventional (100k)** |         10.94 |  6.73 |     2.59 | 2.07 |    20.38 |            58.33 |
+
+Full-Season Performance
+
+Where MSE: mean squared error, MAE: mean absolute error, MAPE: mean
+absolute percentage error, and Overestimate: percentage of observed
+points smaller than the predicted value. Here MSE and MAE are computed
+for comparison to other models, since interpretation of these values in
+a vacuum is not so useful. However from MAPE and Overestimate columns we
+see that our crude prediction strategy, on average, predicts at about a
+20% difference from the observed result, and usually we overestimate.
+
+|                              | Predicted Val |   MSE | root MSE |  MAE | MAPE (%) | Overestimate (%) |
+|:-----------------------------|--------------:|------:|---------:|-----:|---------:|-----------------:|
+| **Off-Season Organic (1k)**  |         25.92 | 49.80 |     7.06 | 6.20 |    23.47 |               50 |
+| **Full-Season Organic (1k)** |         29.44 | 58.54 |     7.65 | 6.96 |    29.38 |               75 |
+
+Off-Season Performance
+
+In the above table we compare full and off season organic models to
+verify if there is actually a quantifiable difference between the two
+models. Of course the small sample size of the test set is a definite
+problem here, but considering this outcome as a preliminary result, we
+do see a slight difference in performance, with the off-season model
+performing marginally better than the full-season model. Whether this
+difference is worth having a separate model is unclear.
+
+These results are very encouraging, since the errors are not
+catastrophic, and the rate of overestimation is also acceptable. With
+this later statement we again imagine that avocado vendors would prefer
+to have a surplus of stock. Furthermore, we have conducted this
+prediction very crudely - simply using the 3rd quartile, and neglecting
+to implement Bayesian update. Implementing a more nuanced strategy that
+includes point-by-point Bayesian update would likely give better
+results, and remains an area for further investigation. (Details for
+this Bayesian update are included in the appendix).
+
+# Summary/Concluding Remarks
+
+In exploratory analysis, we discover indications that conventional Hass
+avocados do not have a strong off-season in San Francisco. However we do
+see a slight suggestion of an off-season for organic Hass avocados.
+Since the bulk of avocado sales are made up of conventional avocados, we
+recommend that San Francisco avocado sellers not overly concern
+themselves with off-season considerations when determining number of
+units to stock.
+
+We also present a simple prediction approach, as well as discuss a more
+nuanced approach for determining future weekly avocado sales. Using
+Jeffreys prior and a Poisson model, we demonstrate a simple, aggressive
+prediction strategy that predicts weekly sales with an average deviation
+from actual values of about $20\%$. Avocado sellers using this
+aggressive strategy would also often find themselves with a surplus of
+units - which can be considered a desirable outcome. This model may be
+used by avocado sellers with differing (more conservative) goals as
+well, and tweaked so that underestimation is the desired outcome. For
+example, predicting near the median of the posterior predictive
+distribution would have virtually guaranteed the sale of all avocado
+units in 2018, with no surplus. But again, we imagine that the margin
+for avocado sellers is favorable enough that surplus is a desirable
+characteristic.
+
+The above recommendations are made based on a model that introduces more
+structure than is suggested by the data - imposing a greater symmetry
+than is observed and obscuring the presence of some outliers.
+Specifically, this modeling approach may have a tendency to naturally
+over-estimate future outcomes, as well as completely miss periods of
+high-volume spikes in avocado sales.
+
+# References
+
+- Arpaia, Mary Lu, et al. “Chapter 2 - Commercial Avocado Cultivars for
+  California.” Avocado Production in California A Cultural Handbook for
+  Growers , Second ed., Book One, The University of California
+  Cooperative Extension, San Diego, CA.
+
+- Singpurwalla, N. D. (2006). Reliability and risk: a Bayesian
+  perspective. John Wiley & Sons.
+
+- Gelman, Andrew, et al. Bayesian data analysis. Chapman and Hall/CRC,
+  1995
+
+# Appendix
+
+**Jeffreys Prior** Since $y_i$s are conditionally independent given
+$\theta$ we have $p(\theta)\propto\sqrt{I_1(\theta)}$. So we compute $$
+\begin{aligned}
+I_1(\theta) &= -E[\frac{d^2}{d\theta^2} p(y_1\vert\theta)] \\
+&= -E[\frac{d^2}{d\theta^2}y_1log(\theta)-\theta] \\
+&= -E[\frac{d}{d\theta}y_1\theta^{-1}-1]\\
+&= -E[\frac{-y_1}{\theta^2}] = \frac{\theta}{\theta^2} = \frac{1}{\theta}
+\end{aligned}
+$$ for $\theta > 0$. And so $p(\theta)\propto \theta^{-\frac{1}{2}}$,
+where $\theta>0$.
+
+**Solving for Posterior** We have that
+$p(y\vert\theta) = \frac{\theta^{n\bar{y}}e^{-\theta}}{\prod^n y_i!}$.
+Thus $$
+\begin{aligned}
+p(\theta\vert y) &\propto p(y\vert\theta)p(\theta) \\
+&\propto \theta^{n\bar{y}}e^{-n\theta}\cdot\theta^{-\frac{1}{2}} \\
+&= \theta^{n\bar{y}-\frac{1}{2}}e^{-n\theta}
+\end{aligned}
+$$ for $\theta >0$. Thus it follows that
+$\theta\vert y \sim \text{Gamma}(n\bar{y}+\frac{1}{2},n)$.
+
+**Bayesian Update** Let $z$ be new data observed under the model.
+Assuming $z\perp y \vert \theta$ then: $$
+\begin{aligned}
+p(\theta\vert y,z) &\propto p(\theta\vert y)p(z\vert\theta) \\
+&\propto \theta^{n_y \bar{y}-\frac{1}{2}}e^{-n_y\theta}\cdot \theta^{n_z\bar{z}}e^{-n_z\theta} \\
+&= \theta^{n_y\bar{y}+n_z\bar{z} -\frac{1}{2}}\cdot e^{-(n_y+n_z)\theta}
+\end{aligned}
+$$ for $\theta>0$. Thus
+$\theta\vert y, z \sim \text{Gamma}(n_y\bar{y}+n_z\bar{z}+\frac{1}{2}, n_y+n_z)$.
+
+**Posterior Predictive** If we judge that $\tilde{y}\perp y\vert\theta$
+then we have that
+$p(\tilde{y}\vert y) = \int_{\Theta}p(\tilde{y}\vert\theta)p(\theta\vert y)d\theta$.
+Thus for $\tilde{y}>0$ we have: $$
+\begin{aligned}
+p(\tilde{y}\vert y) &= \int_{\Theta}\frac{\theta^{\sum \tilde{y}_j }}{\prod\tilde{y_j}!}e^{-n_{\tilde{y}}\theta}\cdot \frac{n_y^{n_y\bar{y}+\frac{1}{2}}}{\Gamma(n_y\bar{y}+\frac{1}{2})}\theta^{n_y\bar{y}-\frac{1}{2}}e^{-n_y\theta} d\theta \\
+&= \frac{n_y^{n_y\bar{y}+\frac{1}{2}}}{\prod\tilde{y}_j!\cdot \Gamma(n_y\bar{y}+\frac{1}{2})} \int_{\Theta} \theta^{n_{\tilde{y}}\bar{\tilde{y}} + n_y\bar{y}-\frac{1}{2}}e^{-(n_{\tilde{y}}+n_y)\theta } d\theta\\
+&= \frac{n_y^{n_y\bar{y}+\frac{1}{2}}}{\prod\tilde{y}_j!\cdot \Gamma(n_y\bar{y}+\frac{1}{2})} \frac{\Gamma(n_{\tilde{y}}\bar{\tilde{y}}+n_{y}\bar{y}+\frac{1}{2})}{(n_{\tilde{y}}+n_{y})^{n_{\tilde{y}}\bar{\tilde{y}}+n_{y}\bar{y}+\frac{1}{2}}}\\
+\end{aligned}
+$$ or equivalently: $$
+= \frac{n_y^{\frac{1}{2}+\sum y_i}}{\prod\tilde{y}_j! \cdot\Gamma(\frac{1}{2}+\sum y_i)}\frac{\Gamma(\frac{1}{2}+\sum{\tilde{y_j}}+\sum{y_i})}{(n_{\tilde{y}}+n_y)^{\frac{1}{2}+\sum{\tilde{y_j}}+\sum{y_i}}}
+$$ Note that for computational purposes we work with
+$e^{log(p(\tilde{y}\vert y))}$ in the code where: $$
+log(p(\tilde{y}\vert y)) = (\frac{1}{2}+\sum y_i)\cdot log(n_y)+log\Gamma(\frac{1}{2}+\sum{\tilde{y_j}}+\sum y_i) \\ -\sum{log(\tilde{y_j}!)}-log\Gamma(\frac{1}{2}+\sum y_i) - (\frac{1}{2}+\sum\tilde{y_j}+\sum y_i)\cdot(n_{\tilde{y}}+n_y)
+$$
+
+``` r
+# full-season paradigm CONV
+y_tilde <- test_conv$Total.Volume.scaled[1]
+y <- train_conv$Total.Volume.scaled
+
+post_predict(y_tilde,y) # probability of first in 2018 TODO MAKE THIS >= OR SIMILAR
+```
+
+    ## [1] 0.1347434
+
+``` r
+curve(1.5*dgamma(x,4,0.5), from = 0, to=25) # proposal dist
+curve(post_predict(x,y), from = 0, to=25,  col = 'red', add=TRUE) # pdf of ppd
+points(x=test_conv$Total.Volume.scaled, y=rep(0, dim(test_conv)[1]), col = "purple")
+```
+
+![](Avocado-Report_files/figure-gfm/unnamed-chunk-32-1.png)<!-- -->
+
+``` r
+# is this ppd really a pdf?
+integrate(post_predict, y=y, lower= 0,upper=25)
+```
+
+    ## 0.9998504 with absolute error < 4.7e-10
+
+``` r
+#HPD for ytilde  (accept-reject)
+sample <- c()
+n_sims <- 5000
+i <- 1
+while (length(sample) < n_sims){
+  x_star <- 1.5*rgamma(1,4,0.5)
+  u <- runif(1)
+  if (u <= post_predict(x_star,y)/(1.5*dgamma(x_star,4,0.5))){
+    sample[i] <- x_star
+    i <- i + 1
+  }
+}
+
+quantile(sample)
+```
+
+    ##         0%        25%        50%        75%       100% 
+    ##  0.7942229  6.8684422  8.9164076 11.0020121 23.2974029
+
+``` r
+p.interval(sample, HPD=T, MM=F, prob=0.95)
+```
+
+    ##         Lower    Upper
+    ## [1,] 3.472992 15.31169
+    ## attr(,"Probability.Interval")
+    ## [1] 0.95
+
+``` r
+###################################### End PPD Sampling Reference Code #################
+```
+
+``` r
+# setup code run once
+#knitr::opts_knit$set(root.dir = normalizePath("C:\\Users\\Arnaud #Laprais\\Desktop\\SJSU\\264 bayesian\\project")) 
+library(LaplacesDemon) # HPDs
+library(knitr)
+library(e1071) # skew and kurtosis
+set.seed(1412)
+data_total <- read.csv("avocado.csv") # total data
+
+data <- data_total[c("Date","Total.Volume", "type","region")]
+
+data$Total.Volume.scaled <- data$Total.Volume/1e5 # adjust units conventional - 100,000
+data$Total.Volume.scaled.2 <- data$Total.Volume/1e3 # adjust units organic ,- 1,000
+
+years <- as.numeric(format(as.Date(data$Date), "%Y"))
+months <- as.numeric(format(as.Date(data$Date), "%m"))
+data$year <- years
+data$month <- months
+# sf_data 
+sf_data <- data[data$region == "SanFrancisco",]
+
+# sf_data conventional and organic
+sf_data_conv <- sf_data[sf_data$type == "conventional",]
+sf_data_org <- sf_data[sf_data$type == "organic",]
+row.names(sf_data_conv) <- NULL
+row.names(sf_data_org) <- NULL
+
+# sf_data off-season
+sf_data_off <- sf_data[sf_data$month %in% c(9,10,11,12,1),]  # sept,oct,nov,dec,jan off-season in cali
+
+sf_data_off_org <- sf_data_off[sf_data_off$type == "organic",]
+sf_data_off_conv <- sf_data_off[sf_data_off$type == "conventional",]
+row.names(sf_data_off_conv) <- NULL
+row.names(sf_data_off_org) <- NULL
+
+# sf_data in-season
+sf_data_in <- sf_data[!(sf_data$month %in% c(9,10,11,12,1)),]  # NOT sept,oct,nov,dec,jan 
+
+sf_data_in_org <- sf_data_in[sf_data_in$type == "organic",]
+sf_data_in_conv <- sf_data_in[sf_data_in$type == "conventional",]
+row.names(sf_data_in_conv) <- NULL
+row.names(sf_data_in_org) <- NULL
+# train & test sets for off-season paradigm
+train_off_conv <- sf_data_off_conv[sf_data_off_conv$year != 2018, ]
+test_off_conv <- sf_data_off_conv[sf_data_off_conv$year == 2018, ]
+train_off_conv <- train_off_conv[order(train_off_conv$Date),]           # order by date
+test_off_conv <- test_off_conv[order(test_off_conv$Date),]
+
+train_off_org <- sf_data_off_org[sf_data_off_org$year != 2018, ]
+test_off_org <- sf_data_off_org[sf_data_off_org$year == 2018, ]
+train_off_org <- train_off_org[order(train_off_org$Date),]            # order by date
+test_off_org <- test_off_org[order(test_off_org$Date),]
+
+
+row.names(train_off_conv) <- NULL  # reset row indices
+row.names(test_off_conv) <- NULL
+row.names(train_off_org) <- NULL  
+row.names(test_off_org) <- NULL
+# train & test sets for full data paradigm
+train_conv <- sf_data_conv[sf_data_conv$year != 2018, ]
+test_conv <- sf_data_conv[sf_data_conv$year == 2018, ]
+train_conv <- train_conv[order(train_conv$Date),]           # order by date
+test_conv <- test_conv[order(test_conv$Date),]
+
+train_org <- sf_data_org[sf_data_org$year != 2018, ]
+test_org <- sf_data_org[sf_data_org$year == 2018, ]
+train_org <- train_org[order(train_org$Date),]            # order by date
+test_org <- test_org[order(test_org$Date),]
+
+
+row.names(train_conv) <- NULL  # reset row indices
+row.names(test_conv) <- NULL
+row.names(train_org) <- NULL  
+row.names(test_org) <- NULL
+
+# Conventional Plot over Time (2015-2018)
+sf_data_conv$Date <- as.Date(sf_data_conv$Date, "%Y-%m-%d")
+sf_data_conv <- sf_data_conv[order(sf_data_conv$Date),]
+plot(sf_data_conv$Date, sf_data_conv$Total.Volume.scaled, 
+     main = "SF Conventional Weekly Sales Volume", 
+     col=ifelse(sf_data_conv$month %in% c(9,10,11,12,1), "red","black"), pch=20,
+     xlab = "Date", ylab= "Units Sold (100k)")
+lines(sf_data_conv$Date, sf_data_conv$Total.Volume.scaled)
+legend("topleft",inset=c(0,0), legend=c("Off-Season", "In-Season"),
+       col=c("red", "black"), pch = 20, cex=0.8)
+
+# Organic Plot over Time (2015-2018)
+sf_data_org$Date <- as.Date(sf_data_org$Date, "%Y-%m-%d")
+sf_data_org <- sf_data_org[order(sf_data_org$Date),]
+plot(sf_data_org$Date, sf_data_org$Total.Volume.scaled.2, 
+     main = "SF Organic Weekly Sales Volume", 
+     col=ifelse(sf_data_org$month %in% c(9,10,11,12,1), "red","black"), pch=20,
+     xlab = "Date", ylab= "Units Sold (1k)" )
+lines(sf_data_org$Date, sf_data_org$Total.Volume.scaled.2)
+legend("topright",inset=c(0,0), legend=c("Off-Season", "In-Season"),
+       col=c("red", "black"), pch = 20, cex=0.8)
+mat <- matrix(data=NA,nrow=4, ncol=7)
+summary_stats_table <- data.frame(mat,row.names=c("**In-Season Conventional (100k)**","**Off-Season Conventional (100k)**", "**In-Season Organic (1k)**", "**Off-Season Organic (1k)**"))
+colnames(summary_stats_table) <- c("Mean","SD","Min","Q1","Q2","Q3","Max")
+# quantiles
+summary_stats_table[1,3:7] <- round(quantile(sf_data_in_conv$Total.Volume.scaled),2)
+summary_stats_table[2,3:7] <- round(quantile(sf_data_off_conv$Total.Volume.scaled),2)
+summary_stats_table[3,3:7] <- round(quantile(sf_data_in_org$Total.Volume.scaled.2),2)
+summary_stats_table[4,3:7] <- round(quantile(sf_data_off_org$Total.Volume.scaled.2),2)
+# mean
+summary_stats_table[1,1] <- round(mean(sf_data_in_conv$Total.Volume.scaled),2)
+summary_stats_table[2,1] <- round(mean(sf_data_off_conv$Total.Volume.scaled),2)
+summary_stats_table[3,1] <- round(mean(sf_data_in_org$Total.Volume.scaled.2),2)
+summary_stats_table[4,1] <- round(mean(sf_data_off_org$Total.Volume.scaled.2),2)
+# sd
+# mean
+summary_stats_table[1,2] <- round(sd(sf_data_in_conv$Total.Volume.scaled),2)
+summary_stats_table[2,2] <- round(sd(sf_data_off_conv$Total.Volume.scaled),2)
+summary_stats_table[3,2] <- round(sd(sf_data_in_org$Total.Volume.scaled.2),2)
+summary_stats_table[4,2] <- round(sd(sf_data_off_org$Total.Volume.scaled.2),2)
+
+kable(summary_stats_table, caption = "Summary Stats")
+par(mfrow=(c(1,2)))
+boxplot(sf_data_off_conv$Total.Volume.scaled,sf_data_in_conv$Total.Volume.scaled, main= "Conventional", horizontal= T, xlab = "Units Sold (100k)", names = c("Off", "In"), col=c("red","grey"), las = 1)
+boxplot(sf_data_off_org$Total.Volume.scaled.2,sf_data_in_org$Total.Volume.scaled.2, main= "Organic", horizontal= T, xlab = "Units Sold (1k)", names = c("Off", "In"), col=c("red","grey"), las = 1)
+#boxplot(sf_data_off_conv$Total.Volume.scaled, add= TRUE)
+mat <- matrix(data=NA, nrow = 3, ncol=2)
+sample_sizes <- data.frame(mat,row.names=c("**Full-Season Organic**", "**Off-Season Organic**", "**Full-Season Conventional**"))
+colnames(sample_sizes) <- c("Model Data", "Validation Data")
+sample_sizes[1,1] <- dim(train_org)[1]
+sample_sizes[1,2] <- dim(test_org)[1]
+sample_sizes[2,1] <- dim(train_off_org)[1]
+sample_sizes[2,2] <- dim(test_off_org)[1]
+sample_sizes[3,1] <- dim(train_conv)[1]
+sample_sizes[3,2] <- dim(test_conv)[1]
+kable(sample_sizes, caption = "Sample Sizes")
+##################### POSTERIOR (JEFFREYS PRIOR)
+posterior <- function(theta,y){
+  n <- length(y)
+  out <- dgamma(theta, n*mean(y)+1/2, n)
+  return(out)
+  }
+
+##### off-season paradigm
+# conventional
+n <- dim(train_off_conv)[1]
+y <- train_off_conv$Total.Volume.scaled
+curve(posterior(x,y), from = 5.5, to=14, xlab = expression(theta))
+##### full season paradigm
+# conventional
+n <- dim(train_conv)[1]
+y <- train_conv$Total.Volume.scaled
+curve(posterior(x,y), from = 5.5, to=10, xlab = expression(theta))
+#### BAYESIAN UPDATE
+updated_posterior <- function(theta,y,z){
+  n_y <- length(y)
+  n_z <- length(z)
+  out <- dgamma(theta, n_y*mean(y) + n_z*mean(z)+1/2, n_y+n_z)
+  return(out)
+}
+
+##### Off - Season paradigm
+#test_off_conv <- test_off_conv[order(test_off_conv$Date),]
+
+n_y <- dim(train_off_conv)[1]
+y <- train_off_conv$Total.Volume.scaled
+z <- test_off_conv$Total.Volume.scaled[1] # update this number
+n_z <- length(z)
+
+curve(posterior(x,y), from = 5.5, to=10, col ='red')
+curve(updated_posterior(x,y,z), from = 5.5, to=10, col ='purple', add = TRUE)
+##### Full-Season paradigm
+y <- train_conv$Total.Volume.scaled
+z <- test_conv$Total.Volume.scaled[1] # update this number
+
+
+curve(posterior(x,y), from = 5.5, to=10, col ='red')
+curve(updated_posterior(x,y,z), from = 5.5, to=10, col ='purple', add = TRUE)
+################  POSTERIOR PREDICTIVE
+post_predict_vec <- function(y_tilde,y){ # vector capable
+  n_y <- length(y)
+  n_y_tilde <- length(y_tilde)
+  out <- (n_y^(1/2+sum(y)) * gamma(1/2+sum(y_tilde)+sum(y))) / 
+    ( prod(factorial(y_tilde))*gamma(1/2+sum(y))*(n_y_tilde + n_y)^(1/2+sum(y_tilde)+sum(y)) )
+  return(out)
+}
+
+post_predict <- function(y_tilde,y){
+  n_y <- length(y)
+  out <- exp((1/2+sum(y))*log(n_y) + lgamma(1/2+y_tilde+sum(y)) - log(factorial(y_tilde)) - lgamma(1/2+sum(y)) -(1/2+y_tilde+sum(y))*log(1+n_y))
+  return(out)
+}
+#### means and vars
+
+# off-season organic
+mean(train_off_org$Total.Volume.scaled.2)
+var(train_off_org$Total.Volume.scaled.2)
+
+# full-season organic
+mean(train_org$Total.Volume.scaled.2)
+var(train_org$Total.Volume.scaled.2)
+
+# full-season conventional
+mean(train_conv$Total.Volume.scaled)
+var(train_conv$Total.Volume.scaled)
+mat <- matrix(data=NA, nrow=3, ncol=3)
+mean_var_table <- data.frame(mat, row.names = c("**Off-Season Organic**","**Full-Season Organic**", "**Full-Season Conventional**"))
+
+colnames(mean_var_table) <- c("Sample Mean", "Sample Variance", "Sample Size")
+
+mean_var_table[1,] <- c( mean(train_off_org$Total.Volume.scaled.2), 
+                        var(train_off_org$Total.Volume.scaled.2),
+                        dim(train_off_org)[1] )
+mean_var_table[2,] <- c( mean(train_org$Total.Volume.scaled.2), 
+                        var(train_org$Total.Volume.scaled.2),
+                        dim(train_org)[1] )
+mean_var_table[3,] <- c( mean(train_conv$Total.Volume.scaled), 
+                        var(train_conv$Total.Volume.scaled),
+                        dim(train_conv)[1] )
+kable(mean_var_table, caption = "Summary of Model Data")
+par(mfrow=c(1,3))
+
+# off-season organic
+hist(train_off_org$Total.Volume.scaled.2, main = "Off-Season Organic", xlab= "Weekly Sales (1k)", breaks = seq(5,45,by=3))
+
+#skewness(train_off_org$Total.Volume.scaled.2) # skew, Normal has 0
+#kurtosis(train_off_org$Total.Volume.scaled.2)
+
+# full-season organic
+hist(train_org$Total.Volume.scaled.2, main = "Full-Season Organic", xlab= "Weekly Sales (1k)")
+
+#skewness(train_org$Total.Volume.scaled.2) # skew, Normal has 0
+#kurtosis(train_org$Total.Volume.scaled.2)
+
+# full-season conv
+hist(train_conv$Total.Volume.scaled, main = "Full-Season Conventional", xlab= "Weekly Sales (100k)", breaks = c(4:18))
+
+#skewness(train_conv$Total.Volume.scaled) # skew, Normal has 0
+#kurtosis(train_conv$Total.Volume.scaled)
+########## Generating y reps for discrepancy measures
+n_sims <- 5000
+
+# off-season organic y^{rep}
+n_reps <- dim(train_off_org)[1]
+off_season_org_reps <- matrix(data=NA, nrow=n_sims, ncol = n_reps)
+y <- train_off_org$Total.Volume.scaled.2
+for (k in 1:n_sims){
+  sample <- c()
+  i <- 1
+  while (length(sample) < n_reps){
+    x_star <- 1.8*rgamma(1,8,0.4)
+    u <- runif(1)
+    if (u <= post_predict(x_star,y)/(1.8*dgamma(x_star,8,0.4))){
+      sample[i] <- x_star
+      i <- i + 1
+    }
+  }
+  off_season_org_reps[k,] <- sample
+}
+
+# full-season organic y^{rep}
+n_reps <- dim(train_org)[1]
+full_season_org_reps <- matrix(data=NA, nrow=n_sims, ncol = n_reps)
+y <- train_org$Total.Volume.scaled.2
+for (k in 1:n_sims){
+  sample <- c()
+  i <- 1
+  while (length(sample) < n_reps){
+    x_star <- 1.5*rgamma(1,12,0.5)
+    u <- runif(1)
+    if (u <= post_predict(x_star,y)/(1.5*dgamma(x_star,12,0.5))){
+      sample[i] <- x_star
+      i <- i + 1
+    }
+  }
+  full_season_org_reps[k,] <- sample
+}
+
+
+# full-season conv y^{rep}
+n_reps <- dim(train_conv)[1]
+full_season_conv_reps <- matrix(data=NA, nrow=n_sims, ncol = n_reps)
+y <- train_conv$Total.Volume.scaled
+for (k in 1:n_sims){
+  sample <- c()
+  i <- 1
+  while (length(sample) < n_reps){
+    x_star <- 1.5*rgamma(1,4,0.5)
+    u <- runif(1)
+    if (u <= post_predict(x_star,y)/(1.5*dgamma(x_star,4,0.5))){
+      sample[i] <- x_star
+      i <- i + 1
+    }
+  }
+  full_season_conv_reps[k,] <- sample
+}
+
+########### Discrepancy Measure (Outliers %)
+
+##### Realized value
+# off-season organic
+Q3 <- quantile(train_off_org$Total.Volume.scaled.2)[[4]]
+Q1 <- quantile(train_off_org$Total.Volume.scaled.2)[[2]]
+realized_off_season_org <- mean(train_off_org$Total.Volume.scaled.2 > 
+                                  (Q3 + 1.5*(Q3-Q1))) * 100 # percent outliers
+# full-season organic
+Q3 <- quantile(train_org$Total.Volume.scaled.2)[[4]]
+Q1 <- quantile(train_org$Total.Volume.scaled.2)[[2]]
+realized_full_season_org <- mean(train_org$Total.Volume.scaled.2 > 
+                                  (Q3 + 1.5*(Q3-Q1))) * 100 # percent outliers
+# full-season conventional
+Q3 <- quantile(train_conv$Total.Volume.scaled)[[4]]
+Q1 <- quantile(train_conv$Total.Volume.scaled)[[2]]
+realized_full_season_conv <- mean(train_conv$Total.Volume.scaled > 
+                                    (Q3 + 1.5*(Q3-Q1))) * 100 # percent outliers
+
+###### simmed 
+# off-season organic
+Q3 <- apply(off_season_org_reps, 1, function(x) quantile(x, probs=0.75)[[1]])
+Q1 <- apply(off_season_org_reps, 1, function(x) quantile(x, probs=0.25)[[1]])
+cutoffs <- Q3 + 1.5*(Q3-Q1) 
+
+t_outlier_off_org <- c()
+for (i in 1:length(cutoffs)){
+  t_outlier_off_org[i] <- mean(off_season_org_reps[i,] > cutoffs[i])*100
+}
+
+# full-season organic
+Q3 <- apply(full_season_org_reps, 1, function(x) quantile(x, probs=0.75)[[1]])
+Q1 <- apply(full_season_org_reps, 1, function(x) quantile(x, probs=0.25)[[1]])
+cutoffs <- Q3 + 1.5*(Q3-Q1) 
+
+t_outlier_org <- c()
+for (i in 1:length(cutoffs)){
+  t_outlier_org[i] <- mean(full_season_org_reps[i,] > cutoffs[i])*100
+}
+
+# full-season conventional
+Q3 <- apply(full_season_conv_reps, 1, function(x) quantile(x, probs=0.75)[[1]])
+Q1 <- apply(full_season_conv_reps, 1, function(x) quantile(x, probs=0.25)[[1]])
+cutoffs <- Q3 + 1.5*(Q3-Q1) 
+
+t_outlier_conv <- c()
+for (i in 1:length(cutoffs)){
+  t_outlier_conv[i] <- mean(full_season_conv_reps[i,] > cutoffs[i])*100
+}
+# plots
+par(mfrow = c(1,3))
+hist(t_outlier_off_org, main = "Off-Season Organic Model", xlab = "% Large Outliers")
+abline(v=realized_off_season_org, col='red')
+hist(t_outlier_org, main = "Full-Season Organic Model", xlab = "% Large Outliers" )
+abline(v=realized_full_season_org, col='red')
+hist(t_outlier_conv, main = "Full-Season Conventional Model", xlab = "% Large Outliers")
+abline(v=realized_full_season_conv, col='red')
+####### Discrepancy Measure (Skew)
+
+#### realized
+# off-season org
+realized_off_season_org <- skewness(train_off_org$Total.Volume.scaled.2)
+  
+# full-season org
+realized_full_season_org <- skewness(train_org$Total.Volume.scaled.2)
+
+# full-season conv
+realized_full_season_conv <- skewness(train_conv$Total.Volume.scaled)
+
+#### simmed
+# off-season organic
+t_skew_off_org <- apply(off_season_org_reps,1, function(x) skewness(x))
+# full-season organic
+t_skew_org <- apply(full_season_org_reps,1, function(x) skewness(x))
+# full-season conventional
+t_skew_conv <- apply(full_season_conv_reps,1, function(x) skewness(x))
+# plots
+par(mfrow= c(1,3))
+# off-season org
+hist(t_skew_off_org, main = "Off-Season Organic", xlab = "Skew")
+abline(v = realized_off_season_org, col= 'red')
+# full-season org
+hist(t_skew_org, xlim = c(-.75,1.8),main = "Full-Season Organic", xlab = "Skew")
+abline(v=realized_full_season_org, col='red')
+# full-season conv
+hist(t_skew_conv, xlim = c(-.5, 1.8))
+abline(v=realized_full_season_conv, col = 'red', main = "Full-Season Conventional", xlab = "Skew")
+############# HPDS
+samp_off_org <- as.vector(unlist(off_season_org_reps))
+samp_org <- as.vector(unlist(full_season_org_reps))
+samp_conv <- as.vector(unlist(full_season_conv_reps))
+
+hpd_off_org <- p.interval(samp_off_org, HPD=T, MM=F, prob=.9)
+hpd_org <- p.interval(samp_org, HPD=T, MM=F, prob=.9)
+hpd_conv <- p.interval(samp_conv, HPD=T, MM=F, prob=.9)
+mat <- matrix(data=NA, nrow=3,ncol=2)
+hpd_table <- data.frame(mat,row.names = c("**Off-Season Organic (1k)**", "**Full-Season Organic (1k)**", "**Full-Season Conventional (100k)**"))
+
+colnames(hpd_table) <- c("Lower Bound", "Upper Bound")
+hpd_table[1,] <- round(as.vector(hpd_off_org),2)
+hpd_table[2,] <- round(as.vector(hpd_org),2)
+hpd_table[3,] <- round(as.vector(hpd_conv),2)
+
+kable(hpd_table, caption = "90% HPD Credible Interval for Future Avocado Sales")
+par(mfrow = c(1,3))
+
+# off-season org
+y <- train_off_org$Total.Volume.scaled.2
+curve(post_predict(x,y), from = 0, to=60, main= "PPD of Off-Season Organic",
+      xlab = "Weekly Units Sold (1k)") 
+points(x=test_off_org$Total.Volume.scaled.2, y=rep(0, dim(test_off_org)[1]), col = "red")
+
+# full-season org
+y <- train_org$Total.Volume.scaled.2
+curve(post_predict(x,y), from = 0, to=50, main= "PPD of Full-Season Organic",
+      xlab = "Weekly Units Sold (1k)") 
+points(x=test_org$Total.Volume.scaled.2, y=rep(0, dim(test_org)[1]), col = "red")
+
+# full-season conv
+y <- train_conv$Total.Volume.scaled
+curve(post_predict(x,y), from = 0, to=25, main= "PPD of Full-Season Conventional",
+      xlab = "Weekly Units Sold (100k)")
+points(x=test_conv$Total.Volume.scaled, y=rep(0, dim(test_conv)[1]), col = "red")
+################### Prediction Accuracy
+####75th percentile prediction point
+# off-season org
+prediction_off_org <- quantile(as.vector(unlist(off_season_org_reps)), probs = 0.75)[[1]]
+# full-season org
+prediction_org <- quantile(as.vector(unlist(full_season_org_reps)), probs = 0.75)[[1]]
+# full-seson conv
+prediction_conv <- quantile(as.vector(unlist(full_season_conv_reps)), probs= 0.75)[[1]]
+
+# mse off-season org
+mse_off_org <- mean((test_off_org$Total.Volume.scaled.2 - prediction_off_org)^2)
+mse_org_compare <- mean((test_off_org$Total.Volume.scaled.2 - prediction_org)^2)
+mse_org <- mean((test_org$Total.Volume.scaled.2 - prediction_org)^2)
+mse_conv <- mean((test_conv$Total.Volume.scaled - prediction_conv)^2)
+
+# root mse (to compare to mean distance, rootmse punishes larger errors than meandist)
+root_mse_off_org <- sqrt(mse_off_org)
+root_mse_org_compare <- sqrt(mse_org_compare)
+root_mse_org <- sqrt(mse_org)
+root_mse_conv <- sqrt(mse_conv)
+
+# mean distance (mean absolute error)
+dist_off_org <- mean(abs(test_off_org$Total.Volume.scaled.2 - prediction_off_org))
+dist_org_compare <- mean(abs(test_off_org$Total.Volume.scaled.2 - prediction_org))
+
+dist_org <- mean(abs(test_org$Total.Volume.scaled.2 - prediction_org))
+dist_conv <- mean(abs(test_conv$Total.Volume.scaled - prediction_conv))
+
+# mean absolute percentage error (mean( abs(actual-predicted)/abs(actual) ))*100
+mape_off_org <- mean(  abs(test_off_org$Total.Volume.scaled.2 - prediction_off_org) /
+                         test_off_org$Total.Volume.scaled.2  ) * 100
+mape_org_compare <- mean(  abs(test_off_org$Total.Volume.scaled.2 - prediction_org) /
+                         test_off_org$Total.Volume.scaled.2  ) * 100
+
+mape_org <- mean(  abs(test_org$Total.Volume.scaled.2 - prediction_org) /
+                         test_org$Total.Volume.scaled.2  ) * 100
+
+mape_conv <- mean(  abs(test_conv$Total.Volume.scaled - prediction_conv) /
+                         test_conv$Total.Volume.scaled  ) * 100
+
+
+# overestimate or underestimate?
+diffs <- prediction_off_org - test_off_org$Total.Volume.scaled.2 
+diffs <- diffs > 0 # 1 if overestimate, 0 if underestimate
+percent_over_off_org <- mean(diffs)*100
+
+diffs <- prediction_org - test_off_org$Total.Volume.scaled.2 
+diffs <- diffs > 0 # 1 if overestimate, 0 if underestimate
+percent_over_org_compare <- mean(diffs)*100
+
+diffs <- prediction_org - test_org$Total.Volume.scaled.2
+diffs <- diffs > 0 # 1 if overestimate, 0 if underestimate
+percent_over_org <- mean(diffs)*100
+
+diffs <- prediction_conv - test_conv$Total.Volume.scaled
+diffs <- diffs > 0 # 1 if overestimate, 0 if underestimate
+percent_over_conv <- mean(diffs)*100
+####### Prediction Tables
+# full season
+mat <- matrix(data=NA, nrow=2, ncol = 6)
+table_full <- data.frame(mat,row.names = c("**Full-Season Organic (1k)**", "**Full-Season Conventional (100k)**"))
+colnames(table_full) <- c("Predicted Val","MSE","root MSE", 
+                          "MAE", "MAPE (%)", "Overestimate (%)")
+table_full[1,] <- round(c(prediction_org, mse_org, root_mse_org, dist_org, 
+                    mape_org, percent_over_org),2)
+table_full[2,] <- round(c(prediction_conv, mse_conv, root_mse_conv, dist_conv, 
+                    mape_conv, percent_over_conv),2)
+
+# off-season
+mat <- matrix(data=NA, nrow=2, ncol = 6)
+table_off <- data.frame(mat,row.names = c("**Off-Season Organic (1k)**", "**Full-Season Organic (1k)**"))
+colnames(table_off) <- c("Predicted Val","MSE","root MSE", 
+                          "MAE", "MAPE (%)", "Overestimate (%)")
+table_off[1,] <- round(c(prediction_off_org, mse_off_org, root_mse_off_org, 
+                          dist_off_org, mape_off_org, percent_over_off_org),2)
+table_off[2,] <- round(c(prediction_org, mse_org_compare, root_mse_org_compare, 
+                          dist_org_compare, mape_org_compare, percent_over_org_compare),2)
+kable(table_full, caption = "Full-Season Performance")
+kable(table_off, caption = "Off-Season Performance")
+###################################### PPD Sampling Reference Code #################
+# off-season paradigm ORG
+y_tilde <- test_off_org$Total.Volume.scaled.2[1]
+y <- train_off_org$Total.Volume.scaled.2
+
+post_predict(y_tilde,y) # probability of first in 2018 TODO MAKE THIS >= OR SIMILAR
+
+curve(1.8*dgamma(x,8,0.4), from = 0, to=60) # proposal dist
+curve(post_predict(x,y), from = 0, to=60,  col = 'red', add=TRUE) # pdf of ppd
+points(x=test_off_org$Total.Volume.scaled.2, y=rep(0, dim(test_off_org)[1]), col = "purple")
+
+# is this ppd really a pdf?
+integrate(post_predict, y=y, lower= 0,upper=60)
+
+
+#HPD for ytilde  (accept-reject)
+sample <- c()
+n_sims <- 5000
+i <- 1
+while (length(sample) < n_sims){
+  x_star <- 1.8*rgamma(1,8,0.4)
+  u <- runif(1)
+  if (u <= post_predict(x_star,y)/(1.8*dgamma(x_star,8,0.4))){
+    sample[i] <- x_star
+    i <- i + 1
+  }
+}
+
+quantile(sample)
+p.interval(sample, HPD=T, MM=F, prob=0.95)
+# full-season paradigm ORGANIC
+y_tilde <- test_org$Total.Volume.scaled.2[1]
+y <- train_org$Total.Volume.scaled.2
+
+post_predict(y_tilde,y) # probability of first in 2018 TODO MAKE THIS >= OR SIMILAR
+
+curve(1.5*dgamma(x,12,0.5), from = 0, to=50) # proposal dist
+curve(post_predict(x,y), from = 0, to=50,  col = 'red', add=TRUE) # pdf of ppd
+points(x=test_org$Total.Volume.scaled.2, y=rep(0, dim(test_org)[1]), col = "purple")
+
+
+# is this ppd really a pdf?
+integrate(post_predict, y=y, lower= 0,upper=50)
+
+
+#HPD for ytilde  (accept-reject)
+sample <- c()
+n_sims <- 5000
+i <- 1
+while (length(sample) < n_sims){
+  x_star <- 1.5*rgamma(1,12,0.5)
+  u <- runif(1)
+  if (u <= post_predict(x_star,y)/(1.5*dgamma(x_star,12,0.5))){
+    sample[i] <- x_star
+    i <- i + 1
+  }
+}
+
+quantile(sample)
+p.interval(sample, HPD=T, MM=F, prob=0.95)
+# full-season paradigm CONV
+y_tilde <- test_conv$Total.Volume.scaled[1]
+y <- train_conv$Total.Volume.scaled
+
+post_predict(y_tilde,y) # probability of first in 2018 TODO MAKE THIS >= OR SIMILAR
+
+curve(1.5*dgamma(x,4,0.5), from = 0, to=25) # proposal dist
+curve(post_predict(x,y), from = 0, to=25,  col = 'red', add=TRUE) # pdf of ppd
+points(x=test_conv$Total.Volume.scaled, y=rep(0, dim(test_conv)[1]), col = "purple")
+
+
+# is this ppd really a pdf?
+integrate(post_predict, y=y, lower= 0,upper=25)
+
+
+#HPD for ytilde  (accept-reject)
+sample <- c()
+n_sims <- 5000
+i <- 1
+while (length(sample) < n_sims){
+  x_star <- 1.5*rgamma(1,4,0.5)
+  u <- runif(1)
+  if (u <= post_predict(x_star,y)/(1.5*dgamma(x_star,4,0.5))){
+    sample[i] <- x_star
+    i <- i + 1
+  }
+}
+
+quantile(sample)
+p.interval(sample, HPD=T, MM=F, prob=0.95)
+###################################### End PPD Sampling Reference Code #################
+# off-season paradigm CONV
+y_tilde <- test_off_conv$Total.Volume.scaled[1]
+y <- train_off_conv$Total.Volume.scaled
+
+curve(2*dgamma(x,3,0.4), from = -2, to=25) # proposal dist
+curve(post_predict(x,y), from = -2, to=25,  col = 'red', add=TRUE) # pdf of ppd
+points(x=test_off_conv$Total.Volume.scaled, y=rep(0, dim(test_off_conv)[1]), col = "purple")
+
+
+# is this ppd really a pdf?
+integrate(post_predict, y=y, lower= 0,upper=20)
+
+#HPD for ytilde (accept-reject)
+sample <- c()
+n_sims <- 50000
+i <- 1
+while (length(sample) < n_sims){
+  x_star <- 2*rgamma(1,3,0.4)
+  u <- runif(1)
+  if (u <= post_predict(x_star,y)/(2*dgamma(x_star,3,0.4))){
+    sample[i] <- x_star
+    i <- i + 1
+  }
+}
+
+quantile(sample)
+p.interval(sample, HPD=T, MM=F, prob=0.95)
+```
